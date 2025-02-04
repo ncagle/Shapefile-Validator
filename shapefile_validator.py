@@ -9,13 +9,16 @@ Created by NCagle
 
 Simple GUI that uses geopandas to check if zipped shapefiles
 are valid and can be opened.
+
+Using PyInstaller to package as an executable.
+`pyinstaller --name ShapefileValidator --onefile --windowed --hidden-import tkinterdnd2 shapefile_validator_v3.py`
 """
 import zipfile
 import os
 from pathlib import Path
 import tempfile
 import logging
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Dict
 import tkinter as tk
 from tkinter import filedialog, ttk
 from threading import Thread
@@ -30,18 +33,21 @@ logger = logging.getLogger(__name__)
 
 class ShapefileValidatorGUI:
     """
-    GUI interface for validating zipped shapefiles with drag and drop support.
+    GUI interface for validating multiple zipped shapefiles with drag and drop support.
     """
     def __init__(self):
         self.root = tkdnd.Tk()
-        self.root.title("Shapefile Validator")
+        self.root.title("Shapefile Validator by NCagle")
 
         # Set minimum window size
-        self.root.minsize(500, 300)
+        self.root.minsize(600, 400)
 
         # Configure grid weights
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_rowconfigure(2, weight=1)
+
+        # Dictionary to store files and their validation status
+        self.files: Dict[str, bool] = {}
 
         # Create and pack widgets
         self.setup_ui()
@@ -55,14 +61,18 @@ class ShapefileValidatorGUI:
         # File selection frame
         select_frame = ttk.Frame(self.root)
         select_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
-        select_frame.grid_columnconfigure(0, weight=1)
+        select_frame.grid_columnconfigure(1, weight=1)
 
-        self.path_var = tk.StringVar()
-        self.path_entry = ttk.Entry(select_frame, textvariable=self.path_var)
-        self.path_entry.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+        ttk.Label(select_frame, text="Files to validate:").grid(row=0, column=0, padx=5)
 
-        self.browse_btn = ttk.Button(select_frame, text="Browse", command=self.browse_file)
-        self.browse_btn.grid(row=0, column=1)
+        self.file_count_label = ttk.Label(select_frame, text="0 files selected")
+        self.file_count_label.grid(row=0, column=1, padx=5)
+
+        self.browse_btn = ttk.Button(select_frame, text="Browse", command=self.browse_files)
+        self.browse_btn.grid(row=0, column=2)
+
+        self.clear_btn = ttk.Button(select_frame, text="Clear All", command=self.clear_files)
+        self.clear_btn.grid(row=0, column=3, padx=(5, 0))
 
         # Drop zone frame
         self.drop_frame = ttk.LabelFrame(self.root, text="Drop Zone")
@@ -73,7 +83,7 @@ class ShapefileValidatorGUI:
         # Drop zone label
         self.drop_label = ttk.Label(
             self.drop_frame,
-            text="Drag and drop a zipped shapefile here\nor click Browse to select a file",
+            text="Drag and drop zipped shapefiles here\nor click Browse to select files",
             justify="center"
         )
         self.drop_label.grid(row=0, column=0, padx=20, pady=20)
@@ -84,22 +94,126 @@ class ShapefileValidatorGUI:
         self.drop_frame.bind('<Enter>', self.on_drag_enter)
         self.drop_frame.bind('<Leave>', self.on_drag_leave)
 
-        # Validate button
+        # File list
+        self.file_list = tk.Listbox(
+            self.root,
+            selectmode=tk.EXTENDED,
+            height=6
+        )
+        self.file_list.grid(row=2, column=0, padx=10, sticky="nsew")
+
+        # Scrollbar for file list
+        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=self.file_list.yview)
+        scrollbar.grid(row=2, column=1, sticky="ns")
+        self.file_list.configure(yscrollcommand=scrollbar.set)
+
+        # Progress frame
+        progress_frame = ttk.Frame(self.root)
+        progress_frame.grid(row=3, column=0, columnspan=2, padx=10, pady=5, sticky="ew")
+        progress_frame.grid_columnconfigure(0, weight=1)
+
+        self.progress = ttk.Progressbar(
+            progress_frame,
+            mode='determinate',
+            length=200
+        )
+        self.progress.grid(row=0, column=0, sticky="ew")
+
+        # Buttons frame
+        button_frame = ttk.Frame(self.root)
+        button_frame.grid(row=4, column=0, columnspan=2, pady=5)
+
         self.validate_btn = ttk.Button(
-            self.root, 
-            text="Validate Shapefile", 
+            button_frame,
+            text="Validate Shapefiles",
             command=self.validate_threaded
         )
-        self.validate_btn.grid(row=2, column=0, pady=10)
+        self.validate_btn.pack(side=tk.LEFT, padx=5)
+
+        self.remove_btn = ttk.Button(
+            button_frame,
+            text="Remove Selected",
+            command=self.remove_selected
+        )
+        self.remove_btn.pack(side=tk.LEFT, padx=5)
 
         # Status display
         self.status_text = tk.Text(
-            self.root, 
-            height=5, 
-            wrap=tk.WORD, 
+            self.root,
+            height=10,
+            wrap=tk.WORD,
             state="disabled"
         )
-        self.status_text.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        self.status_text.grid(row=5, column=0, columnspan=2, padx=10, pady=(0, 10), sticky="nsew")
+
+
+    def update_file_count(self):
+        """Update the file count label"""
+        count = len(self.files)
+        self.file_count_label.configure(
+            text=f"{count} {'file' if count == 1 else 'files'} selected"
+        )
+
+    def clear_files(self):
+        """Clear all files from the list"""
+        self.files.clear()
+        self.file_list.delete(0, tk.END)
+        self.update_file_count()
+        self.update_status("All files cleared")
+
+
+    def remove_selected(self):
+        """Remove selected files from the list"""
+        selected = self.file_list.curselection()
+        for index in reversed(selected):
+            file_path = self.file_list.get(index)
+            self.files.pop(file_path, None)
+            self.file_list.delete(index)
+        self.update_file_count()
+
+
+    def add_files(self, file_paths: List[str]):
+        """Add files to the validation list"""
+        for path in file_paths:
+            if path.lower().endswith('.zip') and path not in self.files:
+                self.files[path] = None
+                self.file_list.insert(tk.END, path)
+        self.update_file_count()
+
+
+    def handle_drop(self, event):
+        """Handle file drop events"""
+        file_paths = self.root.tk.splitlist(event.data)
+        valid_files = [f.strip('{}').strip('"') for f in file_paths if f.lower().endswith('.zip')]
+
+        if valid_files:
+            self.add_files(valid_files)
+        else:
+            self.update_status("Please drop only .zip files", True)
+
+
+    def on_drag_enter(self, event):
+        """Visual feedback when dragging over drop zone"""
+        self.drop_label.configure(text="Release to add files")
+        self.drop_frame.configure(style="Highlight.TLabelframe")
+
+
+    def on_drag_leave(self, event):
+        """Reset visual feedback when leaving drop zone"""
+        self.drop_label.configure(
+            text="Drag and drop zipped shapefiles here\nor click Browse to select files"
+        )
+        self.drop_frame.configure(style="TLabelframe")
+
+
+    def browse_files(self):
+        """Open file dialog for selecting multiple zipped shapefiles"""
+        filenames = filedialog.askopenfilenames(
+            title="Select Zipped Shapefiles",
+            filetypes=[("Zip files", "*.zip"), ("All files", "*.*")]
+        )
+        if filenames:
+            self.add_files(filenames)
 
 
     def center_window(self):
@@ -110,44 +224,6 @@ class ShapefileValidatorGUI:
         x = (self.root.winfo_screenwidth() // 2) - (width // 2)
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
-
-
-    def handle_drop(self, event):
-        """Handle file drop events"""
-        file_path = event.data
-
-        # Clean up the file path (handle quotes and curly braces)
-        file_path = file_path.strip('{}').strip('"')
-
-        if file_path.lower().endswith('.zip'):
-            self.path_var.set(file_path)
-            self.validate_threaded()
-        else:
-            self.update_status("Please drop a .zip file", True)
-
-
-    def on_drag_enter(self, event):
-        """Visual feedback when dragging over drop zone"""
-        self.drop_label.configure(text="Release to validate file")
-        self.drop_frame.configure(style="Highlight.TLabelframe")
-
-
-    def on_drag_leave(self, event):
-        """Reset visual feedback when leaving drop zone"""
-        self.drop_label.configure(
-            text="Drag and drop a zipped shapefile here\nor click Browse to select a file"
-        )
-        self.drop_frame.configure(style="TLabelframe")
-
-
-    def browse_file(self):
-        """Open file dialog for selecting a zipped shapefile"""
-        filename = filedialog.askopenfilename(
-            title="Select Zipped Shapefile",
-            filetypes=[("Zip files", "*.zip"), ("All files", "*.*")]
-        )
-        if filename:
-            self.path_var.set(filename)
 
 
     def update_status(self, message: str, is_error: bool = False):
@@ -163,23 +239,45 @@ class ShapefileValidatorGUI:
 
     def validate_threaded(self):
         """Run validation in a separate thread to prevent GUI freezing"""
+        if not self.files:
+            self.update_status("No files selected to validate", True)
+            return
+
         self.validate_btn.configure(state="disabled")
         self.browse_btn.configure(state="disabled")
-        self.update_status("Validating...")
+        self.update_status("Validating files...")
+        self.progress['value'] = 0
 
-        Thread(target=self.validate_file, daemon=True).start()
+        Thread(target=self.validate_files, daemon=True).start()
 
 
-    def validate_file(self):
-        """Validate the selected shapefile"""
+    def validate_files(self):
+        """Validate all selected shapefiles"""
         try:
-            zip_path = self.path_var.get()
-            is_valid, error_msg = validate_zipped_shapefile(zip_path)
+            total_files = len(self.files)
+            progress_step = 100.0 / total_files
+            results = []
 
-            if is_valid:
-                self.root.after(0, self.update_status, "Shapefile is valid and can be opened")
-            else:
-                self.root.after(0, self.update_status, f"Validation failed: {error_msg}", True)
+            for i, file_path in enumerate(self.files.keys()):
+                is_valid, error_msg = validate_zipped_shapefile(file_path)
+                results.append((file_path, is_valid, error_msg))
+
+                # Update progress
+                self.root.after(0, self.progress.configure, {'value': (i + 1) * progress_step})
+
+            # Format results message
+            valid_count = sum(1 for _, is_valid, _ in results if is_valid)
+            message = f"Validation complete: {valid_count}/{total_files} files valid\n\n"
+
+            for file_path, is_valid, error_msg in results:
+                filename = os.path.basename(file_path)
+                if is_valid:
+                    message += f"✓ {filename}: Valid\n"
+                else:
+                    message += f"❌ {filename}: {error_msg}\n"
+
+            self.root.after(0, self.update_status, message)
+
         finally:
             self.root.after(0, self.validate_btn.configure, {"state": "normal"})
             self.root.after(0, self.browse_btn.configure, {"state": "normal"})
