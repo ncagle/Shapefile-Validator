@@ -19,6 +19,7 @@ from typing import Tuple, Optional
 import tkinter as tk
 from tkinter import filedialog, ttk
 from threading import Thread
+import tkinterdnd2 as tkdnd
 import geopandas as gpd
 
 
@@ -29,14 +30,14 @@ logger = logging.getLogger(__name__)
 
 class ShapefileValidatorGUI:
     """
-    GUI interface for validating zipped shapefiles.
+    GUI interface for validating zipped shapefiles with drag and drop support.
     """
     def __init__(self):
-        self.root = tk.Tk()
+        self.root = tkdnd.Tk()
         self.root.title("Shapefile Validator")
 
         # Set minimum window size
-        self.root.minsize(500, 200)
+        self.root.minsize(500, 300)
 
         # Configure grid weights
         self.root.grid_columnconfigure(0, weight=1)
@@ -63,22 +64,42 @@ class ShapefileValidatorGUI:
         self.browse_btn = ttk.Button(select_frame, text="Browse", command=self.browse_file)
         self.browse_btn.grid(row=0, column=1)
 
+        # Drop zone frame
+        self.drop_frame = ttk.LabelFrame(self.root, text="Drop Zone")
+        self.drop_frame.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
+        self.drop_frame.grid_columnconfigure(0, weight=1)
+        self.drop_frame.grid_rowconfigure(0, weight=1)
+
+        # Drop zone label
+        self.drop_label = ttk.Label(
+            self.drop_frame,
+            text="Drag and drop a zipped shapefile here\nor click Browse to select a file",
+            justify="center"
+        )
+        self.drop_label.grid(row=0, column=0, padx=20, pady=20)
+
+        # Configure drop zone
+        self.drop_frame.drop_target_register('DND_Files')
+        self.drop_frame.dnd_bind('<<Drop>>', self.handle_drop)
+        self.drop_frame.bind('<Enter>', self.on_drag_enter)
+        self.drop_frame.bind('<Leave>', self.on_drag_leave)
+
         # Validate button
         self.validate_btn = ttk.Button(
-            self.root,
-            text="Validate Shapefile",
+            self.root, 
+            text="Validate Shapefile", 
             command=self.validate_threaded
         )
-        self.validate_btn.grid(row=1, column=0, pady=10)
+        self.validate_btn.grid(row=2, column=0, pady=10)
 
         # Status display
         self.status_text = tk.Text(
-            self.root,
-            height=5,
-            wrap=tk.WORD,
+            self.root, 
+            height=5, 
+            wrap=tk.WORD, 
             state="disabled"
         )
-        self.status_text.grid(row=2, column=0, padx=10, pady=(0, 10), sticky="nsew")
+        self.status_text.grid(row=3, column=0, padx=10, pady=(0, 10), sticky="nsew")
 
 
     def center_window(self):
@@ -89,6 +110,34 @@ class ShapefileValidatorGUI:
         x = (self.root.winfo_screenwidth() // 2) - (width // 2)
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
+
+
+    def handle_drop(self, event):
+        """Handle file drop events"""
+        file_path = event.data
+
+        # Clean up the file path (handle quotes and curly braces)
+        file_path = file_path.strip('{}').strip('"')
+
+        if file_path.lower().endswith('.zip'):
+            self.path_var.set(file_path)
+            self.validate_threaded()
+        else:
+            self.update_status("Please drop a .zip file", True)
+
+
+    def on_drag_enter(self, event):
+        """Visual feedback when dragging over drop zone"""
+        self.drop_label.configure(text="Release to validate file")
+        self.drop_frame.configure(style="Highlight.TLabelframe")
+
+
+    def on_drag_leave(self, event):
+        """Reset visual feedback when leaving drop zone"""
+        self.drop_label.configure(
+            text="Drag and drop a zipped shapefile here\nor click Browse to select a file"
+        )
+        self.drop_frame.configure(style="TLabelframe")
 
 
     def browse_file(self):
@@ -197,4 +246,9 @@ def validate_zipped_shapefile(zip_path: str) -> Tuple[bool, Optional[str]]:
 
 if __name__ == "__main__":
     app = ShapefileValidatorGUI()
+
+    # Create custom style for drop zone highlight
+    style = ttk.Style()
+    style.configure("Highlight.TLabelframe", background="#e1e1e1")
+
     app.root.mainloop()
