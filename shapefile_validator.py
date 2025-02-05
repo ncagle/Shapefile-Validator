@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
+r"""
 shapefile_validator.py
 Created by NCagle
 2025-02-04
@@ -10,9 +10,35 @@ Created by NCagle
 Simple GUI that uses geopandas to check if zipped shapefiles
 are valid and can be opened.
 
+GUI Instructions:
+Click Browse to add zipped shapefiles. Multiple can be added at once
+Select files in the list below and click Remove Selected to remove them
+Click Validate Shapefiles to check all files in the list
+
 Using PyInstaller to package as an executable.
-pyinstaller --name ShapefileValidator --onefile --windowed shapefile_validator.py
+With GDAL explicitly installed (much larger executable size)
+pyinstaller --name ShapefileValidator --onefile --windowed ^
+    --additional-hooks-dir=. ^
+    --hidden-import fiona.ogrext ^
+    --hidden-import geopandas ^
+    --hidden-import pyogrio._geometry ^
+    --hidden-import fiona ^
+    --hidden-import pyogrio ^
+    --add-binary "C:\Users\NatCagle\Anaconda3\envs\pyinstaller\Library\bin\gdal*.dll;." ^
+    --add-binary "C:\Users\NatCagle\Anaconda3\envs\pyinstaller\Library\bin\geos*.dll;." ^
+    --add-binary "C:\Users\NatCagle\Anaconda3\envs\pyinstaller\Library\bin\proj*.dll;." ^
+    --add-binary "C:\Users\NatCagle\Anaconda3\envs\pyinstaller\Library\bin\sqlite*.dll;." ^
+    shapefile_validator.py
+
+With GDAL bundled with pyogrio as a dependency of geopandas (smaller executable size)
+pyinstaller --name ShapefileValidator --onefile --windowed ^
+    --additional-hooks-dir=. ^
+    --hidden-import geopandas ^
+    --hidden-import pyogrio._geometry ^
+    --add-binary "C:\Users\NatCagle\Anaconda3\envs\shapefile-validator\Lib\site-packages\pyogrio.libs\gdal-debee5933f0da7bb90b4bcd009023377.dll;." ^
+    shapefile_validator.py
 """
+import sys
 import os
 from pathlib import Path
 import tempfile
@@ -22,6 +48,20 @@ import zipfile
 import tkinter as tk
 from tkinter import filedialog, ttk
 from threading import Thread
+
+
+# # Fix PATH for PyInstaller bundle
+# # Checks if running in a PyInstaller bundle using sys.frozen
+# if getattr(sys, "frozen", False):
+#     # Gets the temporary directory path where PyInstaller extracts files using sys._MEIPASS
+#     bundle_dir = sys._MEIPASS
+#     # Adds this directory to the system PATH before any other imports
+#     os.environ["PATH"] = f"{bundle_dir};" + os.environ['PATH']
+#     # Also try setting GDAL_DATA
+#     gdal_data = os.path.join(bundle_dir, "Library", "share", "gdal")
+#     if os.path.exists(gdal_data):
+#         os.environ["GDAL_DATA"] = gdal_data
+
 import geopandas as gpd
 
 
@@ -99,9 +139,6 @@ class ShapefileValidatorGUI:
             height=6
         )
         self.file_list.grid(row=2, column=0, padx=10, sticky="nsew")
-
-        # File list drag and drop bindings
-        # self.file_list.bind('<B1-Motion>', self.handle_drag)
 
         # Scrollbar for file list
         scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=self.file_list.yview)
