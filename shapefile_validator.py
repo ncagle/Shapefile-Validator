@@ -11,7 +11,7 @@ Simple GUI that uses geopandas to check if zipped shapefiles
 are valid and can be opened.
 
 Using PyInstaller to package as an executable.
-`pyinstaller --name ShapefileValidator --onefile --windowed --hidden-import tkinterdnd2 shapefile_validator_v3.py`
+`pyinstaller --name ShapefileValidator --onefile --windowed --hidden-import tkinterdnd2 shapefile_validator.py`
 """
 import zipfile
 import os
