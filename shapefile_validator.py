@@ -11,18 +11,17 @@ Simple GUI that uses geopandas to check if zipped shapefiles
 are valid and can be opened.
 
 Using PyInstaller to package as an executable.
-`pyinstaller --name ShapefileValidator --onefile --windowed --hidden-import tkinterdnd2 shapefile_validator.py`
+pyinstaller --name ShapefileValidator --onefile --windowed shapefile_validator.py
 """
-import zipfile
 import os
 from pathlib import Path
 import tempfile
 import logging
 from typing import Tuple, Optional, List, Dict
+import zipfile
 import tkinter as tk
 from tkinter import filedialog, ttk
 from threading import Thread
-import tkinterdnd2 as tkdnd
 import geopandas as gpd
 
 
@@ -33,10 +32,10 @@ logger = logging.getLogger(__name__)
 
 class ShapefileValidatorGUI:
     """
-    GUI interface for validating multiple zipped shapefiles with drag and drop support.
+    GUI interface for validating multiple zipped shapefiles.
     """
     def __init__(self):
-        self.root = tkdnd.Tk()
+        self.root = tk.Tk()
         self.root.title("Shapefile Validator by NCagle")
 
         # Set minimum window size
@@ -74,25 +73,24 @@ class ShapefileValidatorGUI:
         self.clear_btn = ttk.Button(select_frame, text="Clear All", command=self.clear_files)
         self.clear_btn.grid(row=0, column=3, padx=(5, 0))
 
-        # Drop zone frame
-        self.drop_frame = ttk.LabelFrame(self.root, text="Drop Zone")
-        self.drop_frame.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
-        self.drop_frame.grid_columnconfigure(0, weight=1)
-        self.drop_frame.grid_rowconfigure(0, weight=1)
+        # Instructions frame
+        self.instructions_frame = ttk.LabelFrame(self.root, text="Instructions")
+        self.instructions_frame.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
+        self.instructions_frame.grid_columnconfigure(0, weight=1)
+        self.instructions_frame.grid_rowconfigure(0, weight=1)
 
-        # Drop zone label
-        self.drop_label = ttk.Label(
-            self.drop_frame,
-            text="Drag and drop zipped shapefiles here\nor click Browse to select files",
-            justify="center"
+        instructions = (
+            "Click Browse to add zipped shapefiles. Multiple can be added at once\n"
+            "Select files in the list below and click Remove Selected to remove them\n"
+            "Click Validate Shapefiles to check all files in the list"
         )
-        self.drop_label.grid(row=0, column=0, padx=20, pady=20)
 
-        # Configure drop zone
-        self.drop_frame.drop_target_register('DND_Files')
-        self.drop_frame.dnd_bind('<<Drop>>', self.handle_drop)
-        self.drop_frame.bind('<Enter>', self.on_drag_enter)
-        self.drop_frame.bind('<Leave>', self.on_drag_leave)
+        self.instruction_label = ttk.Label(
+            self.instructions_frame,
+            text=instructions,
+            justify="left"
+        )
+        self.instruction_label.grid(row=0, column=0, padx=20, pady=20)
 
         # File list
         self.file_list = tk.Listbox(
@@ -101,6 +99,9 @@ class ShapefileValidatorGUI:
             height=6
         )
         self.file_list.grid(row=2, column=0, padx=10, sticky="nsew")
+
+        # File list drag and drop bindings
+        # self.file_list.bind('<B1-Motion>', self.handle_drag)
 
         # Scrollbar for file list
         scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=self.file_list.yview)
@@ -154,6 +155,7 @@ class ShapefileValidatorGUI:
             text=f"{count} {'file' if count == 1 else 'files'} selected"
         )
 
+
     def clear_files(self):
         """Clear all files from the list"""
         self.files.clear()
@@ -179,31 +181,6 @@ class ShapefileValidatorGUI:
                 self.files[path] = None
                 self.file_list.insert(tk.END, path)
         self.update_file_count()
-
-
-    def handle_drop(self, event):
-        """Handle file drop events"""
-        file_paths = self.root.tk.splitlist(event.data)
-        valid_files = [f.strip('{}').strip('"') for f in file_paths if f.lower().endswith('.zip')]
-
-        if valid_files:
-            self.add_files(valid_files)
-        else:
-            self.update_status("Please drop only .zip files", True)
-
-
-    def on_drag_enter(self, event):
-        """Visual feedback when dragging over drop zone"""
-        self.drop_label.configure(text="Release to add files")
-        self.drop_frame.configure(style="Highlight.TLabelframe")
-
-
-    def on_drag_leave(self, event):
-        """Reset visual feedback when leaving drop zone"""
-        self.drop_label.configure(
-            text="Drag and drop zipped shapefiles here\nor click Browse to select files"
-        )
-        self.drop_frame.configure(style="TLabelframe")
 
 
     def browse_files(self):
@@ -344,9 +321,4 @@ def validate_zipped_shapefile(zip_path: str) -> Tuple[bool, Optional[str]]:
 
 if __name__ == "__main__":
     app = ShapefileValidatorGUI()
-
-    # Create custom style for drop zone highlight
-    style = ttk.Style()
-    style.configure("Highlight.TLabelframe", background="#e1e1e1")
-
     app.root.mainloop()
